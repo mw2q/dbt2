@@ -203,57 +203,35 @@ post_process_sar()
 	# Sar data should be processed on the system they are collected on as sar
 	# versions can vary between systems and thus not be able to read another
 	# version's file.
-	COMMAND=""
-	FILE=${1}
-	HOST=${2}
-	if [ ! "x${HOST}" = "x" ] && [ ! "x${DB_HOSTNAME}" = "xlocalhost" ]; then
-		COMMAND="ssh ${HOST}"
-		${COMMAND} "which sadf > /dev/null" 2>&1
-		if [ $? -eq 0 ]; then
-			SADF="sadf -d -U"
-		    $COMMAND "$SADF 1 1 > /dev/null" 2>&1
-		    if [ $? -ne 0 ]; then
-		        SADF="sadf -D"
-		        $COMMAND "$SADF 1 1 > /dev/null" 2>&1
-		        if [ $? -ne 0 ]; then
-		            echo "WARNING: Was not able to determine proper sadf flags"
-		            SADF="true"
-		        fi
-		    fi
-		else
-			SADF=true
-		fi
-		${COMMAND} "${SADF} -P ALL ${FILE} > `dirname ${FILE}`/sar-cpu.csv"
-		${COMMAND} "${SADF} ${FILE} -- -B > `dirname ${FILE}`/sar-paging.csv"
-		$COMMAND "$SADF $FILE -- -d -p > `dirname $FILE`/sar-blockdev.csv"
-		${COMMAND} "${SADF} ${FILE} -- -R > `dirname ${FILE}`/sar-mem1.csv"
-		${COMMAND} "${SADF} ${FILE} -- -r > `dirname ${FILE}`/sar-mem2.csv"
-		${COMMAND} "${SADF} ${FILE} -- -W > `dirname ${FILE}`/sar-swap.csv"
-		$COMMAND "$SADF $FILE -- -n DEV > `dirname $FILE`/sar-net.csv"
+	local FILE=$1
+	local HOST=$2
+
+	local COMMAND="ssh $HOST"
+
+	$COMMAND "which sadf > /dev/null" 2>&1
+	if [ $? -eq 0 ]; then
+		SADF="sadf -d -U"
+	    $COMMAND "$SADF 1 1 > /dev/null" 2>&1
+	    if [ $? -ne 0 ]; then
+	        SADF="sadf -D"
+	        $COMMAND "$SADF 1 1 > /dev/null" 2>&1
+	        if [ $? -ne 0 ]; then
+	            echo "WARNING: Was not able to determine proper sadf flags"
+	            SADF="true"
+	        fi
+	    fi
 	else
-		which sadf > /dev/null 2>&1
-		if [ $? -eq 0 ]; then
-			SADF="sadf -d -U"
-		    $SADF 1 1 > /dev/null 2>&1
-		    if [ $? -ne 0 ]; then
-		        SADF="sadf -D"
-		        $SADF 1 1 > /dev/null 2>&1
-		        if [ $? -ne 0 ]; then
-		            echo "WARNING: Was not able to determine proper sadf flags"
-		            SADF="true"
-		        fi
-		    fi
-		else
-			SADF=true
-		fi
-		${SADF} -P ALL ${FILE} > `dirname ${FILE}`/sar-cpu.csv
-		${SADF} ${FILE} -- -B > `dirname ${FILE}`/sar-paging.csv
-		${SADF} ${FILE} -- -d -p > `dirname ${FILE}`/sar-blockdev.csv
-		${SADF} ${FILE} -- -R > `dirname ${FILE}`/sar-mem1.csv
-		${SADF} ${FILE} -- -r > `dirname ${FILE}`/sar-mem2.csv
-		${SADF} ${FILE} -- -W > `dirname ${FILE}`/sar-swap.csv
-		$SADF $FILE -- -n DEV > `dirname $FILE`/sar-net.csv
+		SADF=true
 	fi
+	$COMMAND << __EOF__ &
+$SADF -P ALL $FILE > `dirname $FILE`/sar-cpu.csv
+$SADF $FILE -- -B > `dirname $FILE`/sar-paging.csv
+$SADF $FILE -- -d -p > `dirname $FILE`/sar-blockdev.csv
+$SADF $FILE -- -R > `dirname $FILE`/sar-mem1.csv
+$SADF $FILE -- -r > `dirname $FILE`/sar-mem2.csv
+$SADF $FILE -- -W > `dirname $FILE`/sar-swap.csv
+$SADF $FILE -- -n DEV > `dirname $FILE`/sar-net.csv
+__EOF__
 }
 
 readprofile_collect()
@@ -516,6 +494,9 @@ REPORT_FILE="${OUTPUT_DIR}/report.txt"
 # Create the directories we will need.
 #
 make_directories
+for HOSTNAME in $HOSTNAMES; do
+	make_directories $HOSTNAME
+done
 if [ -n ${DB_HOSTNAME} ] && [ ! "x${DB_HOSTNAME}" = "xlocalhost" ]; then
 	#
 	# Create direcotires on the database server if specified.
@@ -559,11 +540,11 @@ if [ "x${DB_COMMAND}" = "x" ]; then
 else
 	${DB_COMMAND} "dbt2-${DBMS}-stop-db ${MISC_ARG}"
 fi
-if [ $? -ne 0 ]; then
-	echo "cleaning up results..."
-	rm -rf ${OUTPUT_DIR}
-	exit 1
-fi
+#if [ $? -ne 0 ]; then
+	#echo "cleaning up results..."
+	#rm -rf ${OUTPUT_DIR}
+	#exit 1
+#fi
 
 if [ "x${DB_COMMAND}" = "x" ]; then
 	eval dbt2-${DBMS}-start-db ${DB_PARAMS_ARG} ${MISC_ARG} \
@@ -847,8 +828,14 @@ if [ -n ${DB_HOSTNAME} ] && [ ! "x${DB_HOSTNAME}" = "xlocalhost" ]; then
 	rsync -a -e "ssh" --delete ${DB_HOSTNAME}:${DB_OUTPUT_DIR}/ \
 			${DB_OUTPUT_DIR}/
 else
-	post_process_sar ${DB_OUTPUT_DIR}/sar_raw.out
+	for HOST in $GTMHOST $HOSTNAMES; do
+		post_process_sar $DB_OUTPUT_DIR/$HOST/sar_raw.out $HOST
+	done
 fi
+wait
+for HOST in $HOSTNAMES; do
+	rsync -a $HOST:$OUTPUT_DIR/ $OUTPUT_DIR/
+done
 
 # Change the permissions on the database error log, not readable by other
 # users by default.

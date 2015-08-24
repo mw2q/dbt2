@@ -23,15 +23,24 @@ fi
 
 which pidstat > /dev/null 2>&1
 if [ $? -eq 0 ]; then
-	PIDSTAT=pidstat
+	PIDSTAT="pidstat -h -l -d -r -s -u -w"
+	$CMD 1 1 > /dev/null 2>&1
+	if [ $? -ne 0 ]; then
+		CMD="$PIDSTAT -h -l -d -r -u -w"
+		$CMD 1 1 > /dev/null 2>&1
+		if [ $? -ne 0 ]; then
+			echo "WARNING: Cannot determine propper pidstat flags"
+			CMD="true"
+		fi
+	fi
 else
 	PIDSTAT=true
 fi
 
 if [ $# -lt 1 ]; then
-    echo "usage: $0 --outdir <output_dir> --iter <iterations> -sample <sample_length>"
-    echo "	<output_dir> will be created if it doesn't exist"
-    exit 1
+	echo "usage: $0 --outdir <output_dir> --iter <iterations> -sample <sample_length>"
+	echo "	<output_dir> will be created if it doesn't exist"
+	exit 1
 fi
 
 COUNTER=0
@@ -107,11 +116,13 @@ mkdir -p $OUTPUT_DIR
 
 echo "starting system statistics data collection"
 
-# collect all sar data in binary form
-${SAR} -o ${OUTPUT_DIR}/sar_raw.out ${SAMPLE_LENGTH} ${ITERATIONS} &
-
-# collect per process statistics as best we can...
-${PIDSTAT} -h -l -d -r -s -u -w ${SAMPLE_LENGTH} ${ITERATIONS} \
-		> ${OUTPUT_DIR}/pidstat.txt &
+for HOST in $GTMHOST $HOSTNAMES; do
+	SARDIR=$OUTPUT_DIR/$HOST
+	ssh $HOST << __EOF__ &
+mkdir -p $SARDIR
+$SAR -o $SARDIR/sar_raw.out $SAMPLE_LENGTH $ITERATIONS &
+$PIDSTAT $SAMPLE_LENGTH $ITERATIONS > $SARDIR/pidstat.txt &
+__EOF__
+done
 
 exit 0

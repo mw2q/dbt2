@@ -41,7 +41,8 @@ create_html_stat_page()
 <body>
 __EOF__
 
-	CPUCHARTS=`(cd $DIR && find */ -name "sar-$TAG*.png")`
+	SARDIR=`dirname $FILE`
+	local CPUCHARTS=`(cd $DIR && find $SARDIR -name "sar-$TAG*.png")`
 	for CHART in $CPUCHARTS; do
 		cat >> $FILE << __EOF__
 `basename $CHART`
@@ -401,23 +402,35 @@ cat > ${OUTDIR}/index.html << __EOF__
 <tr>
 <td align="right">Driver System:</td>
 <td>${OS} ${ARCH} ${OSVER}</td>
+<!--
 <td><a href="driver/$OSPROCFILE">OS Settings</a> |
     <a href="driver/cpu.html">CPU Charts</a> |
     <a href="db/blockdev.html">Blockdev Charts</a> |
     <a href="db/net.html">Network Charts</a> |
     <a href="db/swap.html">Swap Charts</a> |
 </td>
+-->
 </tr>
 
 <tr>
 <td align="right">DBMS:</td>
 <td>${DBOS} ${DBARCH} ${DBOSVER}</td>
-<td><a href="db/proc.txt">OS Settings</a> |
-    <a href="db/cpu.html">CPU Charts</a> |
-    <a href="db/blockdev.html">Blockdev Charts</a> |
-    <a href="db/net.html">Network Charts</a> |
-    <a href="db/swap.html">Swap Charts</a> |
-    <a href="db/plan0.txt">Query Plans</a>
+<td>
+  <a href="db/plan0.txt">Query Plans</a><br />
+__EOF__
+
+for HOST in $GTMHOST $HOSTNAMES; do
+	cat >> $OUTDIR/index.html << __EOF__
+  $HOST:
+  <a href="db/$HOST/proc.txt">OS Settings</a> |
+  <a href="db/$HOST/cpu.html">CPU Charts</a> |
+  <a href="db/$HOST/blockdev.html">Blockdev Charts</a> |
+  <a href="db/$HOST/net.html">Network Charts</a> |
+  <a href="db/$HOST/swap.html">Swap Charts</a><br />
+__EOF__
+done
+
+cat >> $OUTDIR/index.html << __EOF__
 </td>
 </tr>
 
@@ -502,12 +515,12 @@ __EOF__
 
 # Create additional HTML pages for operating system charts.
 
-for SYSTEM in db driver; do
-	create_html_stat_page $SYSTEM cpu $INDIR/$SYSTEM $INDIR/$SYSTEM/cpu.html
-	create_html_stat_page $SYSTEM blockdev $INDIR/$SYSTEM \
-			$INDIR/$SYSTEM/blockdev.html
-	create_html_stat_page $SYSTEM net $INDIR/$SYSTEM $INDIR/$SYSTEM/net.html
-	create_html_stat_page $SYSTEM swap $INDIR/$SYSTEM $INDIR/$SYSTEM/swap.html
+for HOST in $GTMHOST $HOSTNAMES; do
+	create_html_stat_page $HOST cpu $INDIR/db/$SYSTEM $INDIR/db/$HOST/cpu.html
+	create_html_stat_page $HOST blockdev $INDIR/db/$HOST \
+			$INDIR/db/$HOST/blockdev.html
+	create_html_stat_page $HOST net $INDIR/db/$HOST $INDIR/db/$HOST/net.html
+	create_html_stat_page $HOST swap $INDIR/db/$HOST $INDIR/db/$HOST/swap.html
 done
 
 # Create additional HTML pages for the database charts.
